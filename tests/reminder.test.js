@@ -70,6 +70,35 @@ test('definitive webhook rejection retains pending item for safe retry', async (
   assert.equal(rows(s).at(-1).status, 'pending');
   assert.equal((await e.run(config, 'second', { request: async () => success(), snapshot: () => { throw new Error('Unexpected scan'); } })).delivered, 1); s.db.close();
 });
+
+test('rate-limit delays are bounded even when Discord returns unusable values', async () => {
+  for (const [reply, delay] of [[{ retry_after: -20 }, 1000], [{ retry_after: 999999 }, 86400000], [{ retry_after: 'invalid' }, 60000], [null, 60000]]) {
+    const s = storage(), e = new ReminderEngine(s); await baseline(e);
+    const result = await e.run(config, 'second', {
+      snapshot: snapshot([item('new')]), now: () => 1000,
+      request: async () => Response.json(reply, { status: 429 })
+    });
+    assert.equal(result.status, 'rate-limited');
+    assert.equal(rows(s).at(-1).status, 'pending');
+    assert.equal(rows(s).at(-1).retry_at, 1000 + delay); s.db.close();
+  }
+});
+
+test('a later window resumes a rate-limited queue and includes newly discovered content', async () => {
+  const s = storage(); let e = new ReminderEngine(s); await baseline(e);
+  await e.run(config, 'second', {
+    snapshot: snapshot([item('queued')]), now: () => 1000,
+    request: async () => Response.json({ retry_after: 60 }, { status: 429 })
+  });
+  e = new ReminderEngine(s); const delivered = [];
+  const result = await e.run(config, 'next-window', {
+    snapshot: snapshot([item('fresh', 'posts')]), now: () => 61000,
+    request: async (url, init) => { delivered.push(JSON.parse(init.body).content); return success(String(100 + delivered.length)); }
+  });
+  assert.equal(result.delivered, 2);
+  assert.deepEqual(delivered, [item('queued'), item('fresh', 'posts')].map(i => `New content: ${i.url}`));
+  assert.equal(rows(s).filter(r => r.status === 'pending').length, 0); s.db.close();
+});
 test('timeout, 5xx, 408 and malformed confirmation never replay an uncertain delivery', async () => {
   for (const request of [async () => { throw new Error('timeout with secret'); }, async () => new Response('gateway', { status: 502 }),
     async () => new Response('not JSON'), async () => new Response(null, { status: 204 }), async () => new Response('timeout', { status: 408 })]) {
