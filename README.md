@@ -4,15 +4,18 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Cloudflare Workers](https://img.shields.io/badge/runs_on-Cloudflare_Workers-F38020)](https://developers.cloudflare.com/workers/)
 
-**One YouTube channel. One Discord channel. Just the link.**
+**One YouTube channel. One Discord channel. Direct links with image previews.**
 
 A small, open-source Cloudflare Worker that checks a channel's **Shorts** and **Community posts** and announces newly observed content through a Discord webhook:
 
 ```text
-New content: https://www.youtube.com/shorts/VIDEO_ID
+New content:
+https://www.youtube.com/shorts/VIDEO_ID
 ```
 
-Community announcements use `https://www.youtube.com/post/POST_ID`. Text, image, and poll posts all produce the same single-link message. Mentions and automatic Discord embeds are suppressed. No videos or images are downloaded or reposted.
+Community announcements use `https://www.youtube.com/post/POST_ID`. Every message includes a clickable embed: Shorts show a video thumbnail, and image posts show the largest available preview of their first image. Text and poll posts still include the direct link. The Worker references YouTube's hosted images without downloading media or uploading attachments.
+
+Mentions are disabled by default. Set the optional `DISCORD_MENTION_USER_ID` in your private configuration to ping one specific Discord account with **“@user new post”** or **“@user new video”** above the link and preview. Other users, roles, and `@everyone` cannot be pinged by these messages.
 
 There are no application runtime dependencies, YouTube API keys, Gateway bots, or servers to maintain. Once deployed, your computer can be off.
 
@@ -64,11 +67,14 @@ cp wrangler.example.jsonc wrangler.private.jsonc
 | `TIMEZONE` | IANA timezone for local schedules | `Europe/London` |
 | `LOCAL_TIMES` | Comma-separated daily times in 24-hour format | `09:00,17:00` |
 | `WINDOW_MINUTES` | How long a scheduled check may start or retry | `30` |
+| `DISCORD_MENTION_USER_ID` | Optional numeric Discord User ID to ping | `""` (disabled) |
 | `triggers.crons` | UTC wake-up frequency | `["*/5 * * * *"]` |
 
 The example URLs refer to two tabs of **one channel**. Replace both together to monitor another channel. `/channel/UC…/shorts` and `/channel/UC…/posts` URLs are also supported; use matching paths instead of mixing a handle and channel ID.
 
 Keep account IDs, deployment names, and your actual schedule in `wrangler.private.jsonc`. Keep webhook credentials out of configuration variables and source code.
+
+To get a mention ID, enable Discord **Settings → Advanced → Developer Mode**, right-click the desired user's profile, and select **Copy User ID**. Use that numeric string, not a display name or username. Keep your actual ID in the private file. Discord notification delivery also depends on the user's notification settings.
 
 ### 3. Create the Discord webhook
 
@@ -100,6 +106,8 @@ npx wrangler tail --config wrangler.private.jsonc
 ```
 
 Keep the Worker name, `Reminder` class, namespace, migration history, and `single-channel` object name stable on subsequent deployments. Redeploying code preserves tracking state. Deleting the namespace or restoring an old database checkpoint can invalidate duplicate prevention.
+
+Upgrading from the original link-only version adds image storage automatically and preserves existing IDs, sent messages, and pending deliveries. Old announcements are not resent merely because the format changed.
 
 ## Customize scheduling
 
@@ -142,7 +150,7 @@ Manage triggers through the private Wrangler configuration and redeploy. Cloudfl
 
 Logs include the content ID for uncertain deliveries and return `needs-review`. Check the destination channel for that direct URL. If it is missing, post the same `New content: URL` message manually. The retained uncertainty record remains in storage; new content continues to be processed. Do not delete or rewind tracking state to force a retry.
 
-Messages are sent in discovery order. Community pins and approximate publication times make exact chronological ordering unreliable.
+Messages are sent in discovery order. Community pins and approximate publication times make exact chronological ordering unreliable. Image previews depend on YouTube's image URLs and Discord's image proxy; unavailable images do not remove the direct link. Multiple-image posts display their first image, and videos show a thumbnail rather than an uploaded or playable video.
 
 ## YouTube limitations
 
@@ -168,7 +176,7 @@ npm run build    # Cloudflare configuration and bundle check; does not deploy
 npm run dev      # Local Worker with scheduled-trigger testing enabled
 ```
 
-Tests use Node's standard test runner, real SQLite databases, and Cloudflare's workerd runtime through Miniflare. They cover source parsing and pagination, text/images/polls, pinned and reordered posts, initial startup, batches, duplicate prevention, DST, midnight windows, concurrency, storage failures, rate limits, uncertain delivery, and persistence across runtime restarts. Test outbound traffic is mocked; tests do not send Discord messages or access YouTube.
+Tests use Node's standard test runner, real SQLite databases, and Cloudflare's workerd runtime through Miniflare. They cover source parsing and pagination, text/images/polls, safe image URLs, restricted user mentions, upgrades from link-only storage, pinned and reordered posts, initial startup, batches, duplicate prevention, DST, midnight windows, concurrency, storage failures, rate limits, uncertain delivery, and persistence across runtime restarts. Test outbound traffic is mocked; tests do not send Discord messages or access YouTube.
 
 For local manual checks, put `DISCORD_WEBHOOK_URL="your webhook URL"` in a gitignored `.dev.vars` file. Use a separate test webhook, a private config with `LOCAL_TIMES` temporarily blank, and:
 

@@ -11,9 +11,12 @@ export class ReminderEngine {
       CREATE TABLE IF NOT EXISTS items (
         id TEXT PRIMARY KEY, kind TEXT NOT NULL, url TEXT NOT NULL,
         status TEXT NOT NULL CHECK (status IN ('baseline','pending','sending','sent','uncertain')),
-        message_id TEXT, retry_at INTEGER NOT NULL DEFAULT 0
+        message_id TEXT, retry_at INTEGER NOT NULL DEFAULT 0, image_url TEXT
       );
     `);
+    if (![...this.sql.exec('PRAGMA table_info(items)')].some(column => column.name === 'image_url')) {
+      this.sql.exec('ALTER TABLE items ADD COLUMN image_url TEXT');
+    }
     // An interrupted request may already have reached Discord; never replay it blindly.
     this.sql.exec("UPDATE items SET status = 'uncertain' WHERE status = 'sending'");
   }
@@ -50,8 +53,9 @@ export class ReminderEngine {
       const first = !channel;
       this.storage.transactionSync(() => {
         for (const item of result.items) {
-          this.sql.exec('INSERT OR IGNORE INTO items (id,kind,url,status) VALUES (?,?,?,?)',
-            `${item.kind}:${item.id}`, item.kind, item.url, first ? 'baseline' : 'pending');
+          this.sql.exec(`INSERT INTO items (id,kind,url,status,image_url) VALUES (?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET image_url=COALESCE(excluded.image_url,items.image_url)`,
+            `${item.kind}:${item.id}`, item.kind, item.url, first ? 'baseline' : 'pending', item.image || null);
         }
         if (first) {
           this.set('channel', result.channelId);
@@ -64,7 +68,7 @@ export class ReminderEngine {
       if (first) return { status: 'baseline', items: result.items.length };
     }
     let delivered = 0;
-    const pending = [...this.sql.exec("SELECT id,url,retry_at FROM items WHERE status = 'pending' ORDER BY rowid")];
+    const pending = [...this.sql.exec("SELECT id,kind,url,image_url,retry_at FROM items WHERE status = 'pending' ORDER BY rowid")];
     for (const item of pending) {
       if (requests >= MAX_REQUESTS) return { status: 'pending', delivered };
       if (item.retry_at > now()) return { status: 'rate-limited', delivered };
@@ -72,10 +76,17 @@ export class ReminderEngine {
       await this.storage.sync();
       let response;
       try {
+        const label = item.kind === 'posts' ? 'new post' : 'new video';
+        const content = config.mentionUserId ? `<@${config.mentionUserId}> ${label}` : 'New content:';
         response = await limitedRequest(config.webhook, {
           method: 'POST', headers: { 'content-type': 'application/json' }, redirect: 'manual',
           signal: AbortSignal.timeout(15000),
-          body: JSON.stringify({ content: `New content: ${item.url}`, allowed_mentions: { parse: [] }, flags: 4 })
+          body: JSON.stringify({
+            content: `${content}\n<${item.url}>`,
+            allowed_mentions: { parse: [], ...(config.mentionUserId ? { users: [config.mentionUserId] } : {}) },
+            embeds: [{ title: item.kind === 'posts' ? 'New post' : 'New video', url: item.url,
+              ...(item.image_url ? { image: { url: item.image_url } } : {}) }]
+          })
         });
       } catch {
         this.sql.exec("UPDATE items SET status = 'uncertain' WHERE id = ?", item.id);

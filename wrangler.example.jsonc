@@ -11,7 +11,8 @@
     "POSTS_URL": "https://www.youtube.com/@Qlob/posts",
     "TIMEZONE": "Europe/London",
     "LOCAL_TIMES": "09:00,17:00",
-    "WINDOW_MINUTES": "30"
+    "WINDOW_MINUTES": "30",
+    "DISCORD_MENTION_USER_ID": ""
   },
   "durable_objects": {
     "bindings": [{ "name": "REMINDER", "class_name": "Reminder" }]

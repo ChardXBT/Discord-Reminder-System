@@ -54,6 +54,18 @@ function walk(node, visitor) {
   for (const child of Object.values(node)) walk(child, visitor);
 }
 
+function imageUrl(thumbnails = []) {
+  if (!Array.isArray(thumbnails)) return null;
+  return [...thumbnails].sort((a, b) => (b.width || 0) - (a.width || 0)).map(thumbnail => {
+    try {
+      const url = new URL(thumbnail.url, 'https://www.youtube.com');
+      if (url.protocol === 'https:' && !url.username && !url.password && !url.port && url.href.length <= 2048 &&
+          ['ytimg.com', 'ggpht.com', 'googleusercontent.com'].some(host => url.hostname === host || url.hostname.endsWith(`.${host}`))) return url.href;
+    } catch {}
+    return null;
+  }).find(Boolean) || null;
+}
+
 export function parsePage(root, kind) {
   const items = new Map(), continuations = new Set();
   let empty = false;
@@ -69,7 +81,11 @@ export function parsePage(root, kind) {
       if (kind !== 'posts') return false;
       const post = node.backstagePostRenderer;
       if (typeof post.postId !== 'string' || !/^Ug[\w-]{10,}$/.test(post.postId)) throw new Error('Invalid Community post ID');
-      items.set(post.postId, { id: post.postId, kind, url: `https://www.youtube.com/post/${post.postId}` });
+      let image = null;
+      walk(post.backstageAttachment, attachment => {
+        if (attachment.backstageImageRenderer && !image) image = imageUrl(attachment.backstageImageRenderer.image?.thumbnails);
+      });
+      items.set(post.postId, { id: post.postId, kind, url: `https://www.youtube.com/post/${post.postId}`, image });
       return false; // Attached videos, polls, and comments are not separate announcements.
     }
     const short = node.shortsLockupViewModel || node.reelItemRenderer || node.videoRenderer || node.gridVideoRenderer;
@@ -79,7 +95,7 @@ export function parsePage(root, kind) {
       walk(short, part => { if (part.reelWatchEndpoint?.videoId) id = part.reelWatchEndpoint.videoId; });
       if (!id && short.onTap?.innertubeCommand?.watchEndpoint) id = short.onTap.innertubeCommand.watchEndpoint.videoId;
       if (typeof id !== 'string' || !/^[\w-]{11}$/.test(id)) throw new Error('Invalid Short ID');
-      items.set(id, { id, kind, url: `https://www.youtube.com/shorts/${id}` });
+      items.set(id, { id, kind, url: `https://www.youtube.com/shorts/${id}`, image: `https://i.ytimg.com/vi/${id}/hqdefault.jpg` });
       return false;
     }
     if (node.continuationItemRenderer) {

@@ -25,6 +25,10 @@ export function readConfig(env) {
     throw new Error('Expected a standard discord.com HTTPS webhook URL');
   }
   webhook.searchParams.set('wait', 'true');
+  const mentionUserId = env.DISCORD_MENTION_USER_ID || '';
+  if (mentionUserId && !/^[1-9]\d{16,19}$/.test(mentionUserId)) {
+    throw new Error('DISCORD_MENTION_USER_ID must be a numeric Discord User ID');
+  }
   const timezone = env.TIMEZONE || 'UTC';
   try { new Intl.DateTimeFormat('en', { timeZone: timezone }); }
   catch { throw new Error('Invalid TIMEZONE'); }
@@ -36,7 +40,7 @@ export function readConfig(env) {
   if (!Number.isInteger(windowMinutes) || windowMinutes < 1 || windowMinutes > 120) {
     throw new Error('WINDOW_MINUTES must be an integer from 1 to 120');
   }
-  return { shorts: shorts.href, posts: posts.href, webhook: webhook.href, timezone, times, windowMinutes };
+  return { shorts: shorts.href, posts: posts.href, webhook: webhook.href, mentionUserId, timezone, times, windowMinutes };
 }
 
 export function scheduleSlot(config, timestamp) {

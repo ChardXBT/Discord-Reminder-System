@@ -31,7 +31,10 @@ test('actual Worker/SQLite Durable Object detects new content and retains state 
     const url = new URL(request.url);
     if (url.hostname === 'discord.com') {
       deliveries++;
-      assert.match((await request.json()).content, /^New content: https:\/\/www\.youtube\.com\/(shorts|post)\//);
+      const body = await request.json();
+      assert.match(body.content, /^New content:\n<https:\/\/www\.youtube\.com\/(shorts|post)\//);
+      assert.equal(body.embeds.length, 1);
+      assert.equal(body.flags, undefined);
       return success(String(1000 + deliveries));
     }
     const kind = url.pathname.endsWith('/shorts') ? 'shorts' : 'posts';

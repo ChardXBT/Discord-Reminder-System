@@ -24,6 +24,14 @@ test('supports /channel/UC... source URLs', () => {
   const path = `/channel/UC${'a'.repeat(22)}`;
   assert.doesNotThrow(() => readConfig({ ...ENV, SHORTS_URL: `https://youtube.com${path}/shorts`, POSTS_URL: `https://youtube.com${path}/posts` }));
 });
+
+test('optional mentions require a numeric Discord user ID', () => {
+  assert.equal(readConfig(ENV).mentionUserId, '');
+  assert.equal(readConfig({ ...ENV, DISCORD_MENTION_USER_ID: '111111111111111111' }).mentionUserId, '111111111111111111');
+  for (const id of ['@example', '<@111111111111111111>', '123', '111111111111111111,@everyone', '000000000000000000']) {
+    assert.throws(() => readConfig({ ...ENV, DISCORD_MENTION_USER_ID: id }), /numeric Discord User ID/);
+  }
+});
 test('same wall-clock time works in winter and summer', () => {
   const c = readConfig(ENV);
   assert.match(scheduleSlot(c, Date.parse('2026-01-15T09:00Z')), /2026-01-15:09:00$/);

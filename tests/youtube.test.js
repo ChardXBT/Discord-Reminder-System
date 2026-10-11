@@ -21,6 +21,18 @@ test('text, image, poll and video attachments yield only Community links', () =>
   assert.equal(p.items.length, 4);
   assert.ok(p.items.every(i => i.url.startsWith('https://www.youtube.com/post/Ug')));
 });
+
+test('post embeds use the largest safe image from the first image attachment', () => {
+  const image = thumbnails => ({ backstageImageRenderer: { image: { thumbnails } } });
+  const p = parsePage([post('Ugimage___________', image([
+    { url: 'https://yt3.ggpht.com/small', width: 100 }, { url: 'https://yt3.ggpht.com/large', width: 680 },
+    { url: 'https://ggpht.com.evil.test/image', width: 9999 }, { url: 'http://yt3.ggpht.com/insecure', width: 8888 }
+  ])), post('Ugmultiple________', { postMultiImageRenderer: { images: [image([{ url: '//yt3.ggpht.com/first' }]), image([{ url: 'https://yt3.ggpht.com/second' }])] } }),
+  post('Ugtext____________'), post('Uginvalid_________', image([{ url: 'javascript:alert(1)' }, { url: 'https://user:pass@yt3.ggpht.com/image' }])),
+  post('Ugmalformed_______', image({ changed: true }))], 'posts');
+  assert.deepEqual(p.items.map(i => i.image), ['https://yt3.ggpht.com/large', 'https://yt3.ggpht.com/first', null, null, null]);
+  assert.equal(parsePage([short()], 'shorts').items[0].image, 'https://i.ytimg.com/vi/abcDEF_1234/hqdefault.jpg');
+});
 test('comments, refresh tokens and sort commands are not page continuations', () => {
   const p = post(); p.backstagePostThreadRenderer.comments = continuation('comments');
   const parsed = parsePage({ items: [p, continuation('next')], continuations: [{ reloadContinuationData: { continuation: 'refresh' } }],
