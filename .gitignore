@@ -1,0 +1,8 @@
+node_modules/
+.wrangler/
+dist/
+wrangler.private.jsonc
+.dev.vars*
+.env*
+*.log
+private/
