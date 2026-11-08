@@ -32,6 +32,14 @@ test('optional mentions require a numeric Discord user ID', () => {
     assert.throws(() => readConfig({ ...ENV, DISCORD_MENTION_USER_ID: id }), /numeric Discord User ID/);
   }
 });
+test('reviewed uncertain deliveries parse strictly', () => {
+  assert.deepEqual(readConfig(ENV).reviews, []);
+  assert.deepEqual(readConfig({ ...ENV, DISCORD_REVIEWED_ITEMS: ' shorts:abcDEF_1234=delivered, posts:Ugx-y=retry ' }).reviews,
+    [{ id: 'shorts:abcDEF_1234', decision: 'delivered' }, { id: 'posts:Ugx-y', decision: 'retry' }]);
+  for (const value of ['shorts:abc', 'shorts:abc=sent', 'videos:abc=retry', 'shorts:a b=retry', 'shorts:abc=retry,shorts:abc=delivered']) {
+    assert.throws(() => readConfig({ ...ENV, DISCORD_REVIEWED_ITEMS: value }), /DISCORD_REVIEWED_ITEMS/);
+  }
+});
 test('same wall-clock time works in winter and summer', () => {
   const c = readConfig(ENV);
   assert.match(scheduleSlot(c, Date.parse('2026-01-15T09:00Z')), /2026-01-15:09:00$/);

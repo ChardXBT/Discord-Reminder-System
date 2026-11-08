@@ -68,6 +68,7 @@ cp wrangler.example.jsonc wrangler.private.jsonc
 | `LOCAL_TIMES` | Comma-separated daily times in 24-hour format | `09:00,17:00` |
 | `WINDOW_MINUTES` | How long a scheduled check may start or retry | `30` |
 | `DISCORD_MENTION_USER_ID` | Optional numeric Discord User ID to ping | `""` (disabled) |
+| `DISCORD_REVIEWED_ITEMS` | Your decisions for `uncertain` deliveries (see [delivery guarantees](#delivery-guarantees)) | `""` (none) |
 | `triggers.crons` | UTC wake-up frequency | `["*/5 * * * *"]` |
 
 The example URLs refer to two tabs of **one channel**. Replace both together to monitor another channel. `/channel/UC…/shorts` and `/channel/UC…/posts` URLs are also supported; use matching paths instead of mixing a handle and channel ID.
@@ -107,7 +108,7 @@ npx wrangler tail --config wrangler.private.jsonc
 
 Keep the Worker name, `Reminder` class, namespace, migration history, and `single-channel` object name stable on subsequent deployments. Redeploying code preserves tracking state. Deleting the namespace or restoring an old database checkpoint can invalidate duplicate prevention.
 
-Upgrading from the original link-only version adds image storage automatically and preserves existing IDs, sent messages, and pending deliveries. Old announcements are not resent merely because the format changed.
+Upgrading from the original link-only version adds image storage automatically and preserves existing IDs, sent messages, and pending deliveries. Old announcements are not resent merely because the format changed. The first start after an upgrade also rebuilds the items table once under the current delivery-state rules, keeping every row and its order; any row in an unrecognized or contradictory state becomes `uncertain` for review instead of being sent or dropped, and is logged.
 
 ## Customize scheduling
 
@@ -142,15 +143,20 @@ Manage triggers through the private Wrangler configuration and redeploy. Cloudfl
 | Pin, edit, reorder, or reappear | A retained ID is never treated as new. |
 | Concurrent ticks or code redeployment | One object serializes work; SQLite retains IDs and delivery state. |
 | YouTube fetch/parser failure | No partial snapshot or source checkpoint is saved. A later eligible tick retries. |
-| Discord rate limit (`429`) | Item remains pending with persisted `retry_after`. |
+| Discord rate limit (`429`) | Item remains pending with persisted `retry_after`. Later ticks skip it until then and keep delivering the items queued behind it. |
 | Definitive Discord rejection, such as `403` or `404` | Item remains pending until the webhook is fixed. |
 | Timeout, server error, lost confirmation, or interrupted send | Item becomes `uncertain`; it is never automatically replayed. Other items continue. |
 
 **Webhook delivery cannot be guaranteed exactly once.** If Discord accepts a message but its response is lost, the Worker cannot determine whether retrying would duplicate it. This project chooses to avoid automatic duplicates, accepting that an uncertain item may require manual delivery.
 
-Logs include the content ID for uncertain deliveries and return `needs-review`. Check the destination channel for that direct URL. If it is missing, post the same `New content: URL` message manually. The retained uncertainty record remains in storage; new content continues to be processed. Do not delete or rewind tracking state to force a retry.
+Logs include the content ID for uncertain deliveries and return `needs-review`. Check the destination channel for that direct URL, then record your decision in `DISCORD_REVIEWED_ITEMS` and redeploy:
 
-Messages are sent in discovery order. Community pins and approximate publication times make exact chronological ordering unreliable. Image previews depend on YouTube's image URLs and Discord's image proxy; unavailable images do not remove the direct link. Multiple-image posts display their first image, and videos show a thumbnail rather than an uploaded or playable video.
+- `shorts:ID=delivered` (or `posts:ID=delivered`): the message is in Discord, or you posted the same `New content: URL` message by hand. The item becomes `resolved` and is never sent.
+- `shorts:ID=retry`: the message is missing; send it once more. Each item can be retried only once, so leaving the entry in place can never cause a second automatic resend. If the retry is uncertain again, check Discord and mark it `delivered`.
+
+Separate several entries with commas. Entries for items that are not `uncertain` are ignored. New content continues to be processed meanwhile. Do not delete or rewind tracking state to force a retry.
+
+Messages are sent in discovery order, except that an item waiting out a Discord rate limit is sent after the items queued behind it. Community pins and approximate publication times make exact chronological ordering unreliable. Image previews depend on YouTube's image URLs and Discord's image proxy; unavailable images do not remove the direct link. Multiple-image posts display their first image, and videos show a thumbnail rather than an uploaded or playable video.
 
 ## YouTube limitations
 
@@ -195,7 +201,7 @@ Open `http://localhost:8787/__scheduled` to simulate a cron tick. Local storage 
 | Invalid webhook secret | Use the standard Discord URL with no query string; set `DISCORD_WEBHOOK_URL` through `wrangler secret put`. |
 | Discord `401`, `403`, or `404` | Check webhook existence and channel permissions. Rotate the secret while retaining the same webhook ID when possible. |
 | `rate-limited` or `pending` | The queue is retained; a later eligible tick continues. Short windows or infrequent cron ticks can defer delivery. |
-| `needs-review` | Inspect Discord for the logged content ID. Uncertain items require the manual check described above. |
+| `needs-review` | Inspect Discord for the logged content ID, then set `DISCORD_REVIEWED_ITEMS` as described above. |
 | Missing tab, page data, or recognized content | YouTube may have changed its response or blocked anonymous access. Tracking state is preserved; inspect and update the parser. |
 | Request/page/response budget exceeded | The archive exceeds a safety limit. No partial source checkpoint was committed. Review the limits before adapting the scan budget. |
 | Channel/webhook identity changed | Restore the original configuration. To intentionally track a different setup, deploy a new Worker with a new namespace and baseline. |

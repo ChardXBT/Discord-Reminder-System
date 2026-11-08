@@ -40,7 +40,14 @@ export function readConfig(env) {
   if (!Number.isInteger(windowMinutes) || windowMinutes < 1 || windowMinutes > 120) {
     throw new Error('WINDOW_MINUTES must be an integer from 1 to 120');
   }
-  return { shorts: shorts.href, posts: posts.href, webhook: webhook.href, mentionUserId, timezone, times, windowMinutes };
+  // Operator decisions for `uncertain` deliveries: "shorts:ID=delivered,posts:ID=retry".
+  const reviews = (env.DISCORD_REVIEWED_ITEMS || '').split(',').map(r => r.trim()).filter(Boolean).map(entry => {
+    const match = /^((?:shorts|posts):[\w-]+)=(delivered|retry)$/.exec(entry);
+    if (!match) throw new Error('DISCORD_REVIEWED_ITEMS entries must look like shorts:ID=delivered or posts:ID=retry');
+    return { id: match[1], decision: match[2] };
+  });
+  if (new Set(reviews.map(r => r.id)).size !== reviews.length) throw new Error('DISCORD_REVIEWED_ITEMS lists an item twice');
+  return { shorts: shorts.href, posts: posts.href, webhook: webhook.href, mentionUserId, timezone, times, windowMinutes, reviews };
 }
 
 export function scheduleSlot(config, timestamp) {

@@ -12,7 +12,8 @@
     "TIMEZONE": "Europe/London",
     "LOCAL_TIMES": "09:00,17:00",
     "WINDOW_MINUTES": "30",
-    "DISCORD_MENTION_USER_ID": ""
+    "DISCORD_MENTION_USER_ID": "",
+    "DISCORD_REVIEWED_ITEMS": ""
   },
   "durable_objects": {
     "bindings": [{ "name": "REMINDER", "class_name": "Reminder" }]
