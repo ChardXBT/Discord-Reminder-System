@@ -16,7 +16,7 @@
     "deploy": "wrangler deploy --config wrangler.private.jsonc"
   },
   "devDependencies": {
-    "miniflare": "5.20261006.1-alpha",
-    "wrangler": "4.149.0"
+    "miniflare": "5.20261023.0-beta",
+    "wrangler": "4.153.0"
   }
 }

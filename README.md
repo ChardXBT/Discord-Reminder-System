@@ -149,7 +149,7 @@ Manage triggers through the private Wrangler configuration and redeploy. Cloudfl
 
 **Webhook delivery cannot be guaranteed exactly once.** If Discord accepts a message but its response is lost, the Worker cannot determine whether retrying would duplicate it. This project chooses to avoid automatic duplicates, accepting that an uncertain item may require manual delivery.
 
-Logs include the content ID for uncertain deliveries and return `needs-review`. Check the destination channel for that direct URL, then record your decision in `DISCORD_REVIEWED_ITEMS` and redeploy:
+Logs include the content ID for uncertain deliveries and return `needs-review`. Until each is reviewed, each scheduled window that finishes its queue logs the IDs still awaiting a decision (first 20, in a `review` list) and fails the cron invocation with them in the error, so they stay visible in Cloudflare's invocation history. Check the destination channel for each direct URL, then record your decision in `DISCORD_REVIEWED_ITEMS` and redeploy:
 
 - `shorts:ID=delivered` (or `posts:ID=delivered`): the message is in Discord, or you posted the same `New content: URL` message by hand. The item becomes `resolved` and is never sent.
 - `shorts:ID=retry`: the message is missing; send it once more. Each item can be retried only once, so leaving the entry in place can never cause a second automatic resend. If the retry is uncertain again, check Discord and mark it `delivered`.
@@ -163,7 +163,7 @@ Messages are sent in discovery order, except that an item waiting out a Discord 
 - **Undocumented Community endpoint.** The standard YouTube Data API does not provide a Community-post feed. This project reads public tab page data and YouTube's internal browse continuations. Layout changes, consent/login challenges, throttling, or datacenter-IP restrictions can stop detection. Verify source access from your deployed Worker; a successful local check does not prove Cloudflare can access the same pages.
 - **Only publicly exposed content.** Private, members-only, deleted, geographically blocked, or temporarily hidden items cannot be recovered unless YouTube exposes them during a later scan. Content published and removed between checks can be missed. Previously inaccessible historical content that later becomes visible may be treated as newly observed; the web feed does not supply a reliable universal publication timestamp.
 - **Pins use IDs, not feed order.** Every accessible page is scanned, and IDs are retained indefinitely. Moving a known post to the top does not announce it. A newly observed pinned post is handled like any other unseen ID.
-- **Complete scans, bounded work.** Each invocation uses at most 48 external requests, leaving headroom below the Workers Free limit. Both archives must fit within that scan budget; oversized archives fail without saving a partial baseline. Individual responses are capped at 4 MiB and pagination at 100 pages per source. Larger archives require adapting the budget and reviewing the applicable plan limits.
+- **Complete scans, bounded work.** Each invocation uses at most 48 external requests, leaving headroom below the Workers Free limit. Both archives must fit within that scan budget; oversized archives fail without saving a partial baseline. Individual responses are capped at 4 MiB and pagination at 100 pages per source. Larger archives require adapting the budget and reviewing the applicable plan limits. As of 2026-11-17 the example channel's full scan takes 24 of the 48 requests; see [docs/specs/bounded-scan.md](docs/specs/bounded-scan.md) for the planned fix.
 - **Delivery bursts can span ticks.** Pending deliveries resume during the current window or the next eligible window. They are retained even if the corresponding item disappears from YouTube.
 
 This is a small best-effort notifier, with explicit failure handling rather than silent claims of complete coverage.
@@ -201,7 +201,7 @@ Open `http://localhost:8787/__scheduled` to simulate a cron tick. Local storage 
 | Invalid webhook secret | Use the standard Discord URL with no query string; set `DISCORD_WEBHOOK_URL` through `wrangler secret put`. |
 | Discord `401`, `403`, or `404` | Check webhook existence and channel permissions. Rotate the secret while retaining the same webhook ID when possible. |
 | `rate-limited` or `pending` | The queue is retained; a later eligible tick continues. Short windows or infrequent cron ticks can defer delivery. |
-| `needs-review` | Inspect Discord for the logged content ID, then set `DISCORD_REVIEWED_ITEMS` as described above. |
+| `needs-review` | The log entry's `review` list and the cron error name the content IDs. Inspect Discord for each, then set `DISCORD_REVIEWED_ITEMS` as described above. |
 | Missing tab, page data, or recognized content | YouTube may have changed its response or blocked anonymous access. Tracking state is preserved; inspect and update the parser. |
 | Request/page/response budget exceeded | The archive exceeds a safety limit. No partial source checkpoint was committed. Review the limits before adapting the scan budget. |
 | Channel/webhook identity changed | Restore the original configuration. To intentionally track a different setup, deploy a new Worker with a new namespace and baseline. |

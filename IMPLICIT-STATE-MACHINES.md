@@ -1,5 +1,11 @@
 # Implicit State Machines — Audit
 
+> **Status (2026-11-17):** this audit describes the code as of 2026-11-07; line numbers below refer to that
+> revision. Since then, §1 and §3 have been addressed: `ITEM_STATUS`/`ITEM_TRANSITIONS`/`RUN_STATUS` in
+> `src/reminder.js` declare the vocabularies and every allowed edge; `uncertain` now leaves via operator review
+> (`DISCORD_REVIEWED_ITEMS` → `resolved` or one `pending` retry); backed-off items no longer block the queue;
+> `needs-review` results name the item IDs. §2 (slot progress via settings keys) is unchanged.
+
 Repo: Discord-Reminder-System (Cloudflare Worker + Durable Object, 4 source files).
 
 ## 1. Discord item delivery lifecycle

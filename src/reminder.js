@@ -1,5 +1,6 @@
 import { fetchSnapshot } from './youtube.js';
 const MAX_REQUESTS = 48; // Leave room below the Workers Free external-request limit.
+const MAX_REVIEW_IDS = 20; // Keeps the needs-review log line and cron error bounded.
 
 // Discord item delivery lifecycle: the one declared vocabulary for items.status.
 export const ITEM_STATUS = Object.freeze({
@@ -240,7 +241,9 @@ export class ReminderEngine {
     if (backedOff) return runResult(RUN_STATUS.RATE_LIMITED, { delivered });
     this.set('completed_slot', slot);
     await this.storage.sync();
-    const uncertain = [...this.sql.exec('SELECT COUNT(*) AS count FROM items WHERE status = ?', ITEM_STATUS.UNCERTAIN)][0].count;
-    return runResult(uncertain ? RUN_STATUS.NEEDS_REVIEW : RUN_STATUS.COMPLETE, { delivered, uncertain });
+    // Name the items awaiting review: the per-item log line from the original send may have aged out of the logs.
+    const review = [...this.sql.exec('SELECT id FROM items WHERE status = ? ORDER BY rowid', ITEM_STATUS.UNCERTAIN)].map(r => r.id);
+    if (!review.length) return runResult(RUN_STATUS.COMPLETE, { delivered, uncertain: 0 });
+    return runResult(RUN_STATUS.NEEDS_REVIEW, { delivered, uncertain: review.length, review: review.slice(0, MAX_REVIEW_IDS) });
   }
 }

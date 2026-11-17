@@ -160,5 +160,16 @@ test('legacy rows without a CHECK constraint: unknown/contradictory -> needs-rev
   let calls = 0;
   const result = await e.run(config, 'next', { snapshot: snapshot([]), request: async () => { calls++; return success(); } });
   assert.equal(calls, 0, 'unknown legacy rows are never auto-sent');
-  assert.deepEqual(result, { status: 'needs-review', delivered: 0, uncertain: 2 }); s.db.close();
+  assert.deepEqual(result, { status: 'needs-review', delivered: 0, uncertain: 2, review: ['shorts:weird', 'shorts:confirmed'] }); s.db.close();
+});
+
+test('needs-review names the uncertain item IDs (bounded) so they can be reviewed after the original log ages out', async () => {
+  const s = storage(), e = new ReminderEngine(s); await baseline(e);
+  const ids = Array.from({ length: 25 }, (_, i) => `u${String(i).padStart(2, '0')}`);
+  const result = await e.run(config, 'second', { snapshot: snapshot(ids.map(id => item(id))), request: async () => new Response('gateway', { status: 502 }) });
+  assert.equal(result.status, 'needs-review'); assert.equal(result.uncertain, 25);
+  assert.deepEqual(result.review, ids.slice(0, 20).map(id => `shorts:${id}`), 'discovery order, capped at 20');
+  // A later slot, long after the per-item log lines, still reports which items need a decision.
+  const later = await e.run(reviewed('shorts:u00=delivered'), 'third', { snapshot: snapshot([]), request: async () => success() });
+  assert.equal(later.uncertain, 24); assert.equal(later.review[0], 'shorts:u01'); s.db.close();
 });
