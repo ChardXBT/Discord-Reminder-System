@@ -68,3 +68,23 @@ test('scheduled Worker makes zero outbound calls outside a local window', async 
     assert.equal(calls, 0);
   } finally { await mf.dispose(); fs.rmSync(folder, { recursive: true }); }
 });
+
+test('cron run fails with the uncertain content IDs in the error, so the operator can review them', async () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'reminder-runtime-'));
+  let phase = 0, mf;
+  const outbound = async request => {
+    const url = new URL(request.url);
+    if (url.hostname === 'discord.com') return new Response('gateway', { status: 502 });
+    const kind = url.pathname.endsWith('/shorts') ? 'shorts' : 'posts';
+    const items = kind === 'shorts' ? [short(), ...(phase ? [short('xyzDEF_5678')] : [])] : [post()];
+    return new Response(html(page(kind, items)));
+  };
+  try {
+    mf = runtime({ ...ENV, LOCAL_TIMES: '' }, folder, outbound);
+    assert.equal((await mf.dispatchFetch('http://local.test/tick?time=60000')).status, 200);
+    phase = 1;
+    const failed = await mf.dispatchFetch('http://local.test/tick?time=120000');
+    assert.equal(failed.status, 500);
+    assert.match(await failed.text(), /need review: shorts:xyzDEF_5678\. .*DISCORD_REVIEWED_ITEMS/);
+  } finally { if (mf) await mf.dispose(); fs.rmSync(folder, { recursive: true }); }
+});
