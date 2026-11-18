@@ -106,6 +106,10 @@ For logs:
 npx wrangler tail --config wrangler.private.jsonc
 ```
 
+For a redeploy from a clean Git checkout, pass `--message "Git <commit SHA>"` after `npm run deploy --`. Record the version ID from Wrangler. Run `npx wrangler deployments status --config wrangler.private.jsonc` to confirm that version serves 100% of traffic. Use `npx wrangler versions view <version ID> --config wrangler.private.jsonc` to confirm the commit SHA in the version message.
+
+Watch for a `Reminder check` log during the next eligible window. A successful cron invocation outside that window only proves that the trigger ran. A `baseline` or `complete` result confirms the scan succeeded.
+
 Keep the Worker name, `Reminder` class, namespace, migration history, and `single-channel` object name stable on subsequent deployments. Redeploying code preserves tracking state. Deleting the namespace or restoring an old database checkpoint can invalidate duplicate prevention.
 
 Upgrading from the original link-only version adds image storage automatically and preserves existing IDs, sent messages, and pending deliveries. Old announcements are not resent merely because the format changed. The first start after an upgrade also rebuilds the items table once under the current delivery-state rules, keeping every row and its order; any row in an unrecognized or contradictory state becomes `uncertain` for review instead of being sent or dropped, and is logged.
